@@ -6,8 +6,8 @@ from tkinter import ttk, messagebox, filedialog
 import serial
 from serial.tools import list_ports
 import struct
-import os
 import json
+import sys
 from pathlib import Path
 
 
@@ -372,8 +372,9 @@ class App(tk.Tk):
         self.worker = None
 
         # -----------------------------
-        # Config persistence (per-user)
-        #  - stored at %LOCALAPPDATA%\WS_Series_Terminal\config.json (Windows)
+        # Config persistence (same folder as script/exe)
+        #  - script 실행 시: 현재 .py 파일 폴더
+        #  - exe 실행 시: 현재 .exe 파일 폴더
         # -----------------------------
         self._save_job = None
 
@@ -438,14 +439,11 @@ class App(tk.Tk):
     # Config persistence helpers
     # -----------------------------
     def _config_path(self) -> Path:
-        base = os.getenv("LOCALAPPDATA") or os.getenv("APPDATA")
-        if base:
-            root = Path(base)
+        if getattr(sys, "frozen", False):
+            base_dir = Path(sys.executable).resolve().parent
         else:
-            root = Path.home() / ".config"
-        cfg_dir = root / "WS_Series_Terminal"
-        cfg_dir.mkdir(parents=True, exist_ok=True)
-        return cfg_dir / "config.json"
+            base_dir = Path(__file__).resolve().parent
+        return base_dir / "config.json"
 
     def _load_config(self) -> dict:
         p = self._config_path()
