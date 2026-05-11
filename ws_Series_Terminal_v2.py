@@ -670,7 +670,7 @@ class App(tk.Tk):
             self.term_human.delete("1.0", "end")
 
     def _log_line(self, line: str):
-        ts = time.strftime("%H:%M:%S")
+        ts = time.strftime("%Y-%m-%d %H:%M:%S")
         out = f"[{ts}] {line}"
         self.term_raw.insert("end", out + "\n")
         self.term_raw.see("end")
@@ -681,7 +681,7 @@ class App(tk.Tk):
         else:
             text = str(payload).replace("\r", "").replace("\n", "")
 
-        ts = time.strftime("%H:%M:%S")
+        ts = time.strftime("%Y-%m-%d %H:%M:%S")
         line = f"[{ts}] {direction}: {text}"
         self.term_raw.insert("end", line + "\n")
         self.term_raw.see("end")
@@ -697,7 +697,7 @@ class App(tk.Tk):
 
         s = format_bytes(data, self.settings["view_mode"])
         tokens = s.split()
-        ts = time.strftime("%H:%M:%S")
+        ts = time.strftime("%Y-%m-%d %H:%M:%S")
 
         def emit(line_tokens):
             ui_line = f"[{ts}] {direction}: " + " ".join(line_tokens)
@@ -753,37 +753,54 @@ class App(tk.Tk):
         except ValueError:
             return {}
 
-        # UMB frames: ... STX <payload> ETX <CRC16LE(2)> EOT
         etx_idx = len(frame) - 4
         if etx_idx <= stx_idx or frame[etx_idx] != ETX:
             return {}
 
         data_between = frame[stx_idx + 1: etx_idx]
-        if len(data_between) < 1:
+        if len(data_between) < 4:
             return {}
-        # Note: Some devices/requests may return value records under different command codes.
-        # We therefore scan the entire payload for value records instead of enforcing CMD_2F.
+
+        cmd = data_between[0]
+        if cmd != CMD_2F:
+            return {}
+
+        # Observed payload: 2F 10 <status> <num> then records...
+        num = data_between[3]
+        i = 4
 
         out = {}
+        # Record parsing (WS series frames)
+        for _ in range(num):
+            if i >= len(data_between):
+                break
 
-        # Robust scan: value record format (WS series)
-        # [0x08][rec_type=0x00][chLo][chHi][dtype=0x16][f32LE(4)]
-        # We do NOT rely on the "num" field because some stations include extra
-        # non-value records that can shift counts.
-        n = len(data_between)
-        for j in range(0, n - 8):
-            if data_between[j] != 0x08:
+            # no-value record: 03 24 <chLo> <chHi>
+            if i + 3 < len(data_between) and data_between[i] == 0x03 and data_between[i + 1] == 0x24:
+                i += 4
                 continue
-            if data_between[j + 1] != 0x00:
-                continue
-            if data_between[j + 4] != 0x16:
-                continue
-            ch = int.from_bytes(data_between[j + 2:j + 4], "little")
-            fb = data_between[j + 5:j + 9]
-            try:
-                out[ch] = struct.unpack("<f", fb)[0]
-            except Exception:
-                pass
+
+            # value record (1-byte length)
+            rec_len = data_between[i]
+            rec_start = i + 1
+            rec_end = rec_start + rec_len
+            if rec_len < 1 or rec_end > len(data_between):
+                break
+
+            # Minimum: <rec_type><ch(2)><dtype><f32(4)> (total 8 bytes after len byte)
+            if rec_len >= 8:
+                rec_type = data_between[rec_start]
+                if rec_type == 0x00 and (rec_start + 1 + 2 + 1 + 4) <= rec_end:
+                    ch = int.from_bytes(data_between[rec_start + 1:rec_start + 3], "little")
+                    dtype = data_between[rec_start + 3]
+                    if dtype == 0x16 and (rec_start + 4 + 4) <= rec_end:
+                        fb = data_between[rec_start + 4:rec_start + 8]
+                        try:
+                            out[ch] = struct.unpack("<f", fb)[0]
+                        except Exception:
+                            pass
+
+            i = rec_end
 
         return out
     def _append_human_from_frame(self, frame: bytes):
@@ -815,7 +832,7 @@ class App(tk.Tk):
 
         # TXT 저장: 하단(Human) 출력값만 저장 + 타임스탬프
         if self.save_enabled.get() and self.save_fp:
-            ts = time.strftime("%H:%M:%S")
+            ts = time.strftime("%Y-%m-%d %H:%M:%S")
             self.save_fp.write(f"[{ts}] {line}\n")
             self.save_fp.flush()
 
