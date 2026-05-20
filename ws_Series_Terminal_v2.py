@@ -584,8 +584,8 @@ class App(tk.Tk):
 
         self.lbl_custom_tx = ttk.Label(bottom, text="Custom TX (hex)")
         self.lbl_custom_tx.grid(row=1, column=0, sticky="w", pady=(6, 0))
-        self.ent_custom_tx = ttk.Entry(bottom, textvariable=self.custom_tx_hex, width=110)
-        self.ent_custom_tx.grid(row=1, column=1, columnspan=9, padx=6, sticky="w", pady=(6, 0))
+        self.ent_custom_tx = ttk.Entry(bottom, textvariable=self.custom_tx_hex, width=98)
+        self.ent_custom_tx.grid(row=1, column=1, columnspan=8, padx=6, sticky="w", pady=(6, 0))
 
     # ---- Save TXT ----
     def _select_txt(self):
@@ -748,9 +748,11 @@ class App(tk.Tk):
         if frame[0] != SOH or frame[-1] != EOT:
             return {}
 
-        try:
-            stx_idx = frame.index(STX)
-        except ValueError:
+        if len(frame) < 12:
+            return {}
+
+        stx_idx = 7
+        if frame[stx_idx] != STX:
             return {}
 
         etx_idx = len(frame) - 4
